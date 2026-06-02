@@ -2,7 +2,6 @@ import os
 import requests
 from bs4 import BeautifulSoup
 import json
-from datetime import datetime
 
 # Configuration
 TARGET_URL = "https://mami-costurera.mykajabi.com/emprendiendoycosiendo"
@@ -15,13 +14,12 @@ def get_history():
         with open(HISTORY_FILE, "r") as f:
             try:
                 data = json.load(f)
-                # Ensure it's a dict for our new logic, but handle old list format
                 if isinstance(data, list):
-                    return {"last_week": 0, "last_year": 0, "urls": data}
+                    return {"urls": data}
                 return data
             except:
-                return {"last_week": 0, "last_year": 0, "urls": []}
-    return {"last_week": 0, "last_year": 0, "urls": []}
+                return {"urls": []}
+    return {"urls": []}
 
 def save_history(history):
     with open(HISTORY_FILE, "w") as f:
@@ -36,15 +34,7 @@ def send_to_telegram(file_path, caption):
     return response.json()
 
 def scrape_and_download():
-    # --- OPTIMIZATION: Weekly Check ---
-    now = datetime.now()
-    current_year, current_week, _ = now.isocalendar()
     history = get_history()
-
-    if history.get("last_week") == current_week and history.get("last_year") == current_year:
-        print(f"INFO: Pattern for week {current_week} of {current_year} already sent. Skipping check.")
-        return
-
     print(f"Checking {TARGET_URL}...")
     
     try:
@@ -58,7 +48,7 @@ def scrape_and_download():
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # Search for instruction text
+    # 1. Buscar el texto de instrucción
     instruction_text = soup.find(lambda t: t.name in ["h2", "p", "div"] and "Descarga dando click" in t.text)
     
     if not instruction_text:
@@ -67,7 +57,7 @@ def scrape_and_download():
 
     print("Instructional text found! Searching for button...")
 
-    # Search for the button link
+    # 2. Buscar el enlace del botón
     download_link = None
     parent = instruction_text.parent
     for _ in range(5):
@@ -82,7 +72,7 @@ def scrape_and_download():
         parent = parent.parent
 
     if not download_link:
-        # Fallback global search
+        # Búsqueda global de respaldo
         all_links = soup.find_all("a", href=True)
         instruction_index = str(soup).find(str(instruction_text))
         for link in all_links:
@@ -93,37 +83,31 @@ def scrape_and_download():
                     break
 
     if not download_link:
-        print("Link not found after instruction text.")
+        print("Instruction text found but no button link yet.")
         return
 
     if download_link.startswith("/"):
         download_link = "https://mami-costurera.mykajabi.com" + download_link
 
-    # Final check: Don't resend exact same URL if week somehow changed or reset
+    # 3. Verificar historial por URL (para no repetir)
     if download_link in history.get("urls", []):
-        print("This specific URL was already sent. Updating weekly lock.")
-        history["last_week"] = current_week
-        history["last_year"] = current_year
-        save_history(history)
+        print(f"Pattern {download_link} was already sent. Skipping.")
         return
 
-    # Download
+    # 4. Descargar y Enviar
     file_name = download_link.split("/")[-1].split("?")[0]
     if not file_name.endswith(".pdf"): file_name += ".pdf"
 
-    print(f"Downloading: {file_name}")
-    pdf_data = requests.get(download_link).content
+    print(f"NEW Pattern found! Downloading: {file_name}")
+    pdf_response = requests.get(download_link)
     with open(file_name, "wb") as f:
-        f.write(pdf_data)
+        f.write(pdf_response.content)
 
-    # Send
     print("Sending to Telegram...")
     res = send_to_telegram(file_name, "¡Nuevo patrón encontrado! 🧵")
 
     if res.get("ok"):
-        print("Success! Locking this week.")
-        history["last_week"] = current_week
-        history["last_year"] = current_year
+        print("Success! Adding to history.")
         history["urls"].append(download_link)
         save_history(history)
     else:
@@ -131,6 +115,6 @@ def scrape_and_download():
 
 if __name__ == "__main__":
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Config Error.")
+        print("Config Error: Tokens missing.")
     else:
         scrape_and_download()
