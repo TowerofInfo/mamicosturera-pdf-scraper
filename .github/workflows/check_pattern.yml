@@ -8,39 +8,36 @@ on:
 
 jobs:
   check-and-notify:
-    jobs:
-      check-and-notify:
-        runs-on: ubuntu-latest
-        permissions:
-          contents: write
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          pip install requests beautifulsoup4
+
+      - name: Run scraper
         env:
-          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-        steps:
-          - name: Checkout code
-            uses: actions/checkout@v4
-            with:
-              persist-credentials: true
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scraper.py
 
-          - name: Set up Python
-            uses: actions/setup-python@v5
-            with:
-              python-version: '3.x'
-
-          - name: Install dependencies
-            run: |
-              pip install requests beautifulsoup4
-
-          - name: Run scraper
-            env:
-              TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-              TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-            run: python scraper.py
-
-          - name: Commit history
-            run: |
-              git config --local user.email "action@github.com"
-              git config --local user.name "GitHub Action"
-              git add download_history.json
-              git commit -m "Update download history" || echo "No changes to commit"
-              git push origin main
-
+      - name: Commit history
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add download_history.json
+          git commit -m "Update download history" || echo "No changes to commit"
+          git push origin main
