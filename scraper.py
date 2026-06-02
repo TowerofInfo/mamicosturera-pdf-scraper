@@ -109,7 +109,11 @@ def scrape_and_download():
 
     # Step 5: Send to Telegram
     print("Sending to Telegram...")
-    caption = f"¡Nuevo patrón encontrado! 🧵\n{instruction_text.get_text(strip=True)}"
+    instruction_text_str = instruction_text.get_text(strip=True)
+    if len(instruction_text_str) > 1000:
+        instruction_text_str = instruction_text_str[:997] + "..."
+        
+    caption = f"¡Nuevo patrón encontrado! 🧵\n{instruction_text_str}"
     result = send_to_telegram(file_name, caption)
 
     if result.get("ok"):
