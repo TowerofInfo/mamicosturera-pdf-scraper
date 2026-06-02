@@ -51,23 +51,35 @@ def scrape_and_download():
     # We look for <a> tags with 'btn' class or suspicious download hrefs
     download_link = None
     
-    # Try finding the next sibling that contains an <a> tag
-    current = instruction_text
-    for _ in range(10): # Look ahead a few siblings
-        current = current.next_sibling
-        if not current:
-            continue
+    # Try finding the <a> tag within the same parent or following blocks
+    # First, check if the instruction itself is inside a block that has a button
+    parent = instruction_text.parent
+    for _ in range(5): # Go up a few levels to find a common container
+        if not parent:
+            break
+        links = parent.find_all("a", href=True)
+        for link in links:
+            href = link['href']
+            if "/resource_redirect/downloads/" in href or href.endswith(".pdf"):
+                download_link = href
+                break
+        if download_link:
+            break
+        parent = parent.parent
+
+    # Fallback: Find all links in the document and pick the one that appears after the text
+    if not download_link:
+        all_links = soup.find_all("a", href=True)
+        instruction_index = str(soup).find(str(instruction_text))
         
-        if hasattr(current, "find_all"):
-            links = current.find_all("a", href=True)
-            for link in links:
-                href = link['href']
-                # Kajabi specific pattern or .pdf extension
+        for link in all_links:
+            href = link['href']
+            link_index = str(soup).find(str(link))
+            
+            if link_index > instruction_index: # Only links after the text
                 if "/resource_redirect/downloads/" in href or href.endswith(".pdf"):
                     download_link = href
                     break
-        if download_link:
-            break
 
     if not download_link:
         print("Download link not found.")
