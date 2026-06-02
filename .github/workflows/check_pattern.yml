@@ -1,10 +1,7 @@
 name: Check Pattern Live
 
 on:
-  schedule:
-    # Runs every 30 minutes from 9:00 AM to 4:30 PM UTC-6 (15:00 to 22:30 UTC), Monday to Friday
-    - cron: '*/30 15-22 * * 1-5'
-  workflow_dispatch: # Allows manual trigger from GitHub UI
+  workflow_dispatch: # Allows manual trigger from GitHub UI or API (cron-job.org)
 
 jobs:
   check-and-notify:
