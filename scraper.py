@@ -89,13 +89,21 @@ def scrape_and_download():
     if download_link.startswith("/"):
         download_link = "https://mami-costurera.mykajabi.com" + download_link
 
-    # 3. Verificar historial por URL (para no repetir)
-    if download_link in history.get("urls", []):
-        print(f"Pattern {download_link} was already sent. Skipping.")
+    # 3. Verificar historial por nombre de archivo (para ignorar hashes dinámicos)
+    # Ejemplo: '50a3e0f-..._Short_deportivo.pdf' -> guardamos 'Short_deportivo.pdf'
+    raw_file_name = download_link.split("/")[-1].split("?")[0]
+    # Intentar extraer el nombre real quitando el hash inicial (Kajabi suele usar 'hash_NombreArchivo.pdf')
+    if "_" in raw_file_name:
+        base_file_name = "_".join(raw_file_name.split("_")[1:])
+    else:
+        base_file_name = raw_file_name
+
+    if base_file_name in history.get("filenames", []):
+        print(f"Pattern {base_file_name} was already sent. Skipping.")
         return
 
     # 4. Descargar y Enviar
-    file_name = download_link.split("/")[-1].split("?")[0]
+    file_name = raw_file_name
     if not file_name.endswith(".pdf"): file_name += ".pdf"
 
     print(f"NEW Pattern found! Downloading: {file_name}")
@@ -108,6 +116,11 @@ def scrape_and_download():
 
     if res.get("ok"):
         print("Success! Adding to history.")
+        if "filenames" not in history:
+            history["filenames"] = []
+        history["filenames"].append(base_file_name)
+        # Mantener compatibilidad con URLs si es necesario, pero usar filenames para el check
+        if "urls" not in history: history["urls"] = []
         history["urls"].append(download_link)
         save_history(history)
     else:
