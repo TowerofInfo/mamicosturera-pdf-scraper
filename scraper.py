@@ -109,23 +109,16 @@ def scrape_and_download():
 
     # Step 5: Send to Telegram
     print("Sending to Telegram...")
-    instruction_text_str = instruction_text.get_text(strip=True)
-    if len(instruction_text_str) > 1000:
-        instruction_text_str = instruction_text_str[:997] + "..."
-        
-    caption = f"¡Nuevo patrón encontrado! 🧵\n{instruction_text_str}"
+    caption = "¡Nuevo patrón encontrado! 🧵"
     result = send_to_telegram(file_name, caption)
 
+    # History update
     if result.get("ok"):
         print("Success! Notification sent.")
         history.append(download_link)
         save_download_history(history)
     else:
         print(f"Failed to send to Telegram: {result}")
-
-    # Cleanup
-    if os.path.exists(file_name):
-        os.remove(file_name)
 
 if __name__ == "__main__":
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:

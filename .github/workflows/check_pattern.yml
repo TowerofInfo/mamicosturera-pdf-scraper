@@ -41,3 +41,10 @@ jobs:
           git add download_history.json
           git commit -m "Update download history" || echo "No changes to commit"
           git push origin main
+
+      - name: Upload PDF Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: patron-gratis
+          path: "*.pdf"
+          if-no-files-found: ignore
