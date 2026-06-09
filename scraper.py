@@ -14,12 +14,13 @@ def get_history():
         with open(HISTORY_FILE, "r") as f:
             try:
                 data = json.load(f)
+                # Handle cases where history might be an old list format
                 if isinstance(data, list):
-                    return {"urls": data}
+                    return {"filenames": []}
                 return data
             except:
-                return {"urls": []}
-    return {"urls": []}
+                return {"filenames": []}
+    return {"filenames": []}
 
 def save_history(history):
     with open(HISTORY_FILE, "w") as f:
@@ -35,6 +36,9 @@ def send_to_telegram(file_path, caption):
 
 def scrape_and_download():
     history = get_history()
+    if "filenames" not in history:
+        history["filenames"] = []
+
     print(f"Checking {TARGET_URL}...")
     
     try:
@@ -48,86 +52,72 @@ def scrape_and_download():
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # 1. Buscar el texto de instrucción
-    instruction_text = soup.find(lambda t: t.name in ["h2", "p", "div"] and "Descarga dando click" in t.text)
-    
-    if not instruction_text:
-        print("Pattern not available right now.")
+    # 1. Find ALL links that look like PDF downloads
+    all_links = soup.find_all("a", href=True)
+    potential_downloads = []
+
+    for link in all_links:
+        href = link['href']
+        if "/resource_redirect/downloads/" in href or href.lower().endswith(".pdf"):
+            if href.startswith("/"):
+                href = "https://mami-costurera.mykajabi.com" + href
+            potential_downloads.append(href)
+
+    if not potential_downloads:
+        print("No pattern links found on the page.")
         return
 
-    print("Instructional text found! Searching for button...")
+    print(f"Found {len(potential_downloads)} potential links. Checking for new ones...")
 
-    # 2. Buscar el enlace del botón
-    download_link = None
-    parent = instruction_text.parent
-    for _ in range(5):
-        if not parent: break
-        links = parent.find_all("a", href=True)
-        for link in links:
-            href = link['href']
-            if "/resource_redirect/downloads/" in href or href.endswith(".pdf"):
-                download_link = href
-                break
-        if download_link: break
-        parent = parent.parent
+    new_found = False
+    for download_link in potential_downloads:
+        # Extract filename and strip the dynamic hash
+        # Kajabi format is usually: .../downloads/HASH_Actual_FileName.pdf
+        raw_name = download_link.split("/")[-1].split("?")[0]
+        
+        if "_" in raw_name:
+            # Everything after the first underscore is the stable filename
+            base_name = "_".join(raw_name.split("_")[1:])
+        else:
+            base_name = raw_name
 
-    if not download_link:
-        # Búsqueda global de respaldo
-        all_links = soup.find_all("a", href=True)
-        instruction_index = str(soup).find(str(instruction_text))
-        for link in all_links:
-            if str(soup).find(str(link)) > instruction_index:
-                href = link['href']
-                if "/resource_redirect/downloads/" in href or href.endswith(".pdf"):
-                    download_link = href
-                    break
+        # --- DUPLICATE CHECK ---
+        if base_name in history["filenames"]:
+            print(f"Skipping {base_name}: already sent.")
+            continue
 
-    if not download_link:
-        print("Instruction text found but no button link yet.")
-        return
+        # --- NEW PATTERN FOUND ---
+        print(f"New pattern detected: {base_name}")
+        
+        try:
+            pdf_data = requests.get(download_link, timeout=60).content
+            temp_path = f"temp_{raw_name}"
+            with open(temp_path, "wb") as f:
+                f.write(pdf_data)
 
-    if download_link.startswith("/"):
-        download_link = "https://mami-costurera.mykajabi.com" + download_link
+            print("Sending to Telegram...")
+            res = send_to_telegram(temp_path, f"¡Nuevo patrón encontrado! 🧵\nNombre: {base_name}")
 
-    # 3. Verificar historial por nombre de archivo (para ignorar hashes dinámicos)
-    # Ejemplo: '50a3e0f-..._Short_deportivo.pdf' -> guardamos 'Short_deportivo.pdf'
-    raw_file_name = download_link.split("/")[-1].split("?")[0]
-    # Intentar extraer el nombre real quitando el hash inicial (Kajabi suele usar 'hash_NombreArchivo.pdf')
-    if "_" in raw_file_name:
-        base_file_name = "_".join(raw_file_name.split("_")[1:])
-    else:
-        base_file_name = raw_file_name
+            if res.get("ok"):
+                print("Success! Adding to history.")
+                history["filenames"].append(base_name)
+                new_found = True
+            else:
+                print(f"Failed to send to Telegram: {res}")
 
-    if base_file_name in history.get("filenames", []):
-        print(f"Pattern {base_file_name} was already sent. Skipping.")
-        return
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
-    # 4. Descargar y Enviar
-    file_name = raw_file_name
-    if not file_name.endswith(".pdf"): file_name += ".pdf"
+        except Exception as e:
+            print(f"Error processing {base_name}: {e}")
 
-    print(f"NEW Pattern found! Downloading: {file_name}")
-    pdf_response = requests.get(download_link)
-    with open(file_name, "wb") as f:
-        f.write(pdf_response.content)
-
-    print("Sending to Telegram...")
-    res = send_to_telegram(file_name, "¡Nuevo patrón encontrado! 🧵")
-
-    if res.get("ok"):
-        print("Success! Adding to history.")
-        if "filenames" not in history:
-            history["filenames"] = []
-        history["filenames"].append(base_file_name)
-        # Mantener compatibilidad con URLs si es necesario, pero usar filenames para el check
-        if "urls" not in history: history["urls"] = []
-        history["urls"].append(download_link)
+    if new_found:
         save_history(history)
     else:
-        print(f"Failed to send: {res}")
+        print("No new unique patterns to send.")
 
 if __name__ == "__main__":
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Config Error: Tokens missing.")
+        print("Config error: TELEGRAM_TOKEN or TELEGRAM_CHAT_ID not set.")
     else:
         scrape_and_download()
